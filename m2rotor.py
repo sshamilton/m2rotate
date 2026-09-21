@@ -5,6 +5,7 @@ No printing and no debugger hooks here: everything the outside world needs
 to know is delivered through an ``on_event`` callback.
 """
 import re
+import serial
 
 BIN_QUERY = b"Bin;"
 _NUMBER_RE = re.compile(rb"[-+]?\d+(?:\.\d+)?")
@@ -33,3 +34,16 @@ def parse_bin_reply(reply: bytes) -> float:
 def format_ap_command(value: float) -> bytes:
     """Build the ``APn`` go-to command. The controller wants one decimal."""
     return f"APn{value:.1f}\r;".encode("ascii")
+
+
+def read_position(port) -> float:
+    """Send ``Bin;`` on an already open port and return the parsed position."""
+    port.write(BIN_QUERY)
+    reply = port.read_until(b";", 32)
+    return parse_bin_reply(reply)
+
+
+def query_position(device: str, baud: int = 9600, timeout: float = 1.0) -> float:
+    """Open ``device``, ask where it is, close it. Used by the GUI Test buttons."""
+    with serial.Serial(device, baud, timeout=timeout) as port:
+        return read_position(port)
