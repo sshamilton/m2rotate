@@ -230,3 +230,22 @@ def test_serial_error_keeps_client_and_recovers(harness):
     assert harness.statuses()[-1] == m2rotor.STATUS_CONNECTED
     assert "Serial recovered" in harness.logs()
     client.close()
+
+
+def test_failed_write_is_retried_on_next_identical_P(harness):
+    client = harness.connect()
+    harness.az.fail = True
+    client.sendall(b"P 100 50\n")
+    assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: m2rotor.STATUS_SERIAL_ERROR in harness.statuses(), message="serial_error status")
+    assert ap_writes(harness.el) == []  # el never written because az raised first
+
+    harness.az.fail = False
+    client.sendall(b"P 100 50\n")
+    assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: ap_writes(harness.el), message="el APn write")
+    assert ap_writes(harness.az) == [b"APn100.0\r;"]
+    assert ap_writes(harness.el) == [b"APn50.0\r;"]
+    assert harness.statuses()[-1] == m2rotor.STATUS_CONNECTED
+    assert "Serial recovered" in harness.logs()
+    client.close()

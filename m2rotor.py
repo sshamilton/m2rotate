@@ -240,9 +240,9 @@ class RotorBridge:
             el = max(el, 0.0)  # never send a negative elevation to the rotor
             self._send(conn, "RPRT 0\n")  # set commands require an acknowledgement
             if (az, el) != self._last_target:
-                self._last_target = (az, el)
                 self._emit("log", f"Set AZ {az:.1f} EL {el:.1f}")
-                self._write_target(az, el)
+                if self._write_target(az, el):
+                    self._last_target = (az, el)
             return True
         if cmd in ("S", "q"):
             self._emit("log", "Shutdown command received")
@@ -258,8 +258,9 @@ class RotorBridge:
             self._el.write(format_ap_command(el))
         except (serial.SerialException, OSError) as exc:
             self._serial_error(exc)
-            return
+            return False
         self._clear_serial_error()
+        return True
 
     def _poll_position(self):
         """Read both axes. Returns (az, el) or None after logging the problem."""
