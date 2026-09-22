@@ -222,17 +222,44 @@ class RotorBridge:
 
     def _handle_command(self, line, conn):
         """Handle one rotctld command line. Return False to drop the client."""
-        cmd = line[0]
+        parts = line.split()
+        cmd = parts[0][0]
         if cmd == "p":
             position = self._poll_position()
             if position is not None:
                 az, el = position
                 self._send(conn, f"{az:.1f}\n{el:.1f}\n")
             return True
+        if cmd == "P":
+            try:
+                az, el = float(parts[1]), float(parts[2])
+            except (IndexError, ValueError):
+                self._emit("log", f"Bad set command {line!r}")
+                self._send(conn, "RPRT -1\n")
+                return True
+            el = max(el, 0.0)  # never send a negative elevation to the rotor
+            self._send(conn, "RPRT 0\n")  # set commands require an acknowledgement
+            if (az, el) != self._last_target:
+                self._last_target = (az, el)
+                self._emit("log", f"Set AZ {az:.1f} EL {el:.1f}")
+                self._write_target(az, el)
+            return True
+        if cmd in ("S", "q"):
+            self._emit("log", "Shutdown command received")
+            return False
         self._emit("log", f"Ignored command {line!r}")
         return True
 
     # ---- controller I/O ------------------------------------------------
+
+    def _write_target(self, az, el):
+        try:
+            self._az.write(format_ap_command(az))
+            self._el.write(format_ap_command(el))
+        except (serial.SerialException, OSError) as exc:
+            self._serial_error(exc)
+            return
+        self._clear_serial_error()
 
     def _poll_position(self):
         """Read both axes. Returns (az, el) or None after logging the problem."""

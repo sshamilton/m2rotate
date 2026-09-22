@@ -138,3 +138,95 @@ def test_run_surfaces_unexpected_exception_and_stop_stays_safe():
     finally:
         h.bridge.stop()  # must not raise even though the thread already died
     assert h.az.is_open is False and h.el.is_open is False
+
+
+def ap_writes(port):
+    return [w for w in port.writes if w.startswith(b"APn")]
+
+
+def test_P_acks_and_writes_ap_commands_to_both_ports(harness):
+    client = harness.connect()
+    client.sendall(b"P 142.3 37.0\n")
+    assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: ap_writes(harness.el), message="el APn write")
+    assert ap_writes(harness.az) == [b"APn142.3\r;"]
+    assert ap_writes(harness.el) == [b"APn37.0\r;"]
+    assert any("Set AZ 142.3 EL 37.0" in line for line in harness.logs())
+    client.close()
+
+
+def test_P_clamps_negative_elevation_to_zero(harness):
+    client = harness.connect()
+    client.sendall(b"P 10 -5\n")
+    assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: ap_writes(harness.el), message="el APn write")
+    assert ap_writes(harness.el) == [b"APn0.0\r;"]
+    client.close()
+
+
+def test_repeated_identical_P_writes_once(harness):
+    client = harness.connect()
+    for _ in range(3):
+        client.sendall(b"P 90 45\n")
+        assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: ap_writes(harness.el), message="el APn write")
+    time.sleep(0.1)
+    assert len(ap_writes(harness.az)) == 1
+    assert len(ap_writes(harness.el)) == 1
+    client.close()
+
+
+def test_bad_P_replies_error_and_keeps_client(harness):
+    client = harness.connect()
+    client.sendall(b"P 12\n")
+    assert client.recv(1024) == b"RPRT -1\n"
+    client.sendall(b"p\n")
+    assert client.recv(1024) == b"142.3\n37.0\n"
+    client.close()
+
+
+def test_multiple_commands_in_one_packet(harness):
+    client = harness.connect()
+    client.sendall(b"P 1 2\np\n")
+    client.settimeout(2.0)
+    received = b""
+    while b"37.0\n" not in received:
+        received += client.recv(1024)
+    assert received == b"RPRT 0\n142.3\n37.0\n"
+    client.close()
+
+
+def test_S_drops_client_and_accepts_the_next_one(harness):
+    client = harness.connect()
+    client.sendall(b"S\n")
+    assert client.recv(1024) == b""  # server closed the connection
+    client.close()
+    wait_for(lambda: harness.statuses()[-1] == m2rotor.STATUS_LISTENING, message="back to listening")
+
+    again = socket.create_connection(harness.bridge.address, timeout=2.0)
+    again.sendall(b"p\n")
+    assert again.recv(1024) == b"142.3\n37.0\n"
+    again.close()
+
+
+def test_client_disconnect_returns_to_listening(harness):
+    client = harness.connect()
+    client.close()
+    wait_for(lambda: harness.statuses()[-1] == m2rotor.STATUS_LISTENING, message="back to listening")
+    assert "client disconnected" in harness.logs()
+
+
+def test_serial_error_keeps_client_and_recovers(harness):
+    client = harness.connect()
+    harness.az.fail = True
+    client.sendall(b"P 100 50\n")
+    assert client.recv(1024) == b"RPRT 0\n"
+    wait_for(lambda: m2rotor.STATUS_SERIAL_ERROR in harness.statuses(), message="serial_error status")
+    assert any("Serial error" in line for line in harness.logs())
+
+    harness.az.fail = False
+    client.sendall(b"p\n")
+    assert client.recv(1024) == b"142.3\n37.0\n"  # same connection still works
+    assert harness.statuses()[-1] == m2rotor.STATUS_CONNECTED
+    assert "Serial recovered" in harness.logs()
+    client.close()
