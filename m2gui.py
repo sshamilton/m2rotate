@@ -63,11 +63,16 @@ class App(tk.Tk):
         ttk.Label(parent, text=text).grid(row=row, column=0, sticky="w", pady=2)
         combo = ttk.Combobox(parent, state="readonly")
         combo.grid(row=row, column=1, sticky="ew", padx=4)
-        combo.bind("<<ComboboxSelected>>", lambda _e: self._update_start_state())
         test = ttk.Button(parent, text="Test", width=5, command=lambda: self.test_port(which))
         test.grid(row=row, column=2)
         result = ttk.Label(parent, text="", width=22)
         result.grid(row=row, column=3, sticky="w", padx=4)
+
+        def on_select(_e):
+            self._set_label(result, "")
+            self._update_start_state()
+
+        combo.bind("<<ComboboxSelected>>", on_select)
         setattr(self, f"{which}_combo", combo)
         setattr(self, f"{which}_test", test)
         setattr(self, f"{which}_result", result)
@@ -146,11 +151,14 @@ class App(tk.Tk):
         self._update_start_state()
 
     def _find_index(self, serial_number, device):
-        for index, port in enumerate(self._ports):
-            if serial_number and port.serial_number == serial_number:
-                return index
-            if device and port.device == device:
-                return index
+        if serial_number:
+            for index, port in enumerate(self._ports):
+                if port.serial_number == serial_number:
+                    return index
+        if device:
+            for index, port in enumerate(self._ports):
+                if port.device == device:
+                    return index
         return None
 
     def _selected(self, combo):
@@ -227,10 +235,14 @@ class App(tk.Tk):
         try:
             while True:
                 kind, payload = self._events.get_nowait()
-                self._apply_event(kind, payload)
+                try:
+                    self._apply_event(kind, payload)
+                except Exception as exc:
+                    self._log(f"Bad event {kind!r}: {exc}")
         except queue.Empty:
             pass
-        self.after(100, self._drain_events)
+        finally:
+            self.after(100, self._drain_events)
 
     def _apply_event(self, kind, payload):
         if kind == "log":

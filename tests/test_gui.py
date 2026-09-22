@@ -1,8 +1,11 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("tkinter")
 
-from m2gui import start_allowed
+from m2gui import App, start_allowed
 from m2ports import PortInfo
 
 AZ = PortInfo("/dev/ttyUSB0", "ftDZZ3P9", "FTDI", "FT232R USB UART")
@@ -22,3 +25,22 @@ def test_start_blocked_when_a_port_is_missing():
 def test_start_blocked_when_same_device_picked_twice():
     assert start_allowed(AZ, AZ) is False
     assert start_allowed(AZ, PortInfo("/dev/ttyUSB0", None, None, "manual")) is False
+
+
+@pytest.fixture
+def app():
+    config_path = Path(tempfile.mkdtemp()) / "config.json"
+    instance = App(config_path=config_path)
+    try:
+        yield instance
+    finally:
+        instance.destroy()
+
+
+def test_find_index_prefers_serial_number_over_stale_device_path(app):
+    app._ports = [
+        PortInfo("/dev/ttyUSB0", "SERIAL_B", None, None),
+        PortInfo("/dev/ttyUSB1", "SERIAL_A", None, None),
+    ]
+    assert app._find_index("SERIAL_A", "/dev/ttyUSB0") == 1
+    assert app._find_index(None, "/dev/ttyUSB0") == 0
