@@ -199,6 +199,7 @@ def test_multiple_commands_in_one_packet(harness):
 def test_S_drops_client_and_accepts_the_next_one(harness):
     client = harness.connect()
     client.sendall(b"S\n")
+    assert client.recv(1024) == b"RPRT 0\n"
     assert client.recv(1024) == b""  # server closed the connection
     client.close()
     wait_for(lambda: harness.statuses()[-1] == m2rotor.STATUS_LISTENING, message="back to listening")

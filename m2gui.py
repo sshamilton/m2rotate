@@ -252,6 +252,8 @@ class App(tk.Tk):
             self.az_value.configure(text=f"{az:.1f}°")
             self.el_value.configure(text=f"{el:.1f}°")
         elif kind == "status":
+            if payload == m2rotor.STATUS_STOPPED and self._bridge is not None and not self._bridge.running:
+                self._stop_bridge()
             if payload == m2rotor.STATUS_LISTENING:
                 text = f"Listening on {self._int_entry(self.port_entry, m2config.DEFAULTS['tcp_port'])}"
             else:

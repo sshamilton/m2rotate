@@ -46,6 +46,7 @@ def format_ap_command(value: float) -> bytes:
 
 def read_position(port) -> float:
     """Send ``Bin;`` on an already open port and return the parsed position."""
+    port.reset_input_buffer()
     port.write(BIN_QUERY)
     reply = port.read_until(b";", 32)
     return parse_bin_reply(reply)
@@ -246,6 +247,7 @@ class RotorBridge:
             return True
         if cmd in ("S", "q"):
             self._emit("log", "Shutdown command received")
+            self._send(conn, "RPRT 0\n")
             return False
         self._emit("log", f"Ignored command {line!r}")
         return True

@@ -53,13 +53,17 @@ def main(argv=None):
         print(f"Failed to start: {exc}", file=sys.stderr)
         return 1
     print(f"Azimuth {az}, elevation {el}. Ctrl-C to stop.", flush=True)
+    interrupted = False
     try:
-        while True:
+        while bridge.running:
             time.sleep(1)
     except KeyboardInterrupt:
-        pass
+        interrupted = True
     finally:
         bridge.stop()
+    if not interrupted:
+        print("Bridge stopped unexpectedly.", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -16,6 +16,10 @@ class FakeSerial:
         self.fail = fail
         self.writes = []
         self.is_open = True
+        self.flushes = 0
+
+    def reset_input_buffer(self):
+        self.flushes += 1
 
     def write(self, data):
         if self.fail:

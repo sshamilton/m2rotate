@@ -62,6 +62,12 @@ def test_read_position_sends_bin_and_parses_reply():
     assert port.writes == [b"Bin;"]
 
 
+def test_read_position_flushes_stale_input_before_querying():
+    port = FakeSerial(position=142.3)
+    assert read_position(port) == 142.3
+    assert port.flushes == 1
+
+
 def test_read_position_malformed_raises():
     port = FakeSerial(reply=b"??")
     with pytest.raises(ProtocolError):

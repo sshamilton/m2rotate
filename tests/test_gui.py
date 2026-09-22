@@ -5,6 +5,7 @@ import pytest
 
 pytest.importorskip("tkinter")
 
+import m2rotor
 from m2gui import App, start_allowed
 from m2ports import PortInfo
 
@@ -44,3 +45,24 @@ def test_find_index_prefers_serial_number_over_stale_device_path(app):
     ]
     assert app._find_index("SERIAL_A", "/dev/ttyUSB0") == 1
     assert app._find_index(None, "/dev/ttyUSB0") == 0
+
+
+def test_abnormal_stop_resets_the_gui(app):
+    class StandInBridge:
+        running = False
+
+        def stop(self):
+            pass
+
+    bridge = StandInBridge()
+    app._bridge = bridge
+    app.start_button.configure(text="Stop")
+    app._apply_event("status", m2rotor.STATUS_STOPPED)
+    assert app._bridge is None
+    assert app.start_button.cget("text") == "Start"
+
+    bridge.running = True
+    app._bridge = bridge
+    app.start_button.configure(text="Stop")
+    app._apply_event("status", m2rotor.STATUS_STOPPED)
+    assert app._bridge is bridge
