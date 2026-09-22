@@ -106,6 +106,7 @@ class RotorBridge:
         """
         if self.running:
             return
+        self._close_all()
         try:
             self._az = self._serial_factory(self.az_device, self.baud, timeout=1.0)
             self._el = self._serial_factory(self.el_device, self.baud, timeout=1.0)
@@ -160,23 +161,31 @@ class RotorBridge:
         host, port = self.address
         self._emit("log", f"Listening on {host}:{port}")
         self._emit("status", STATUS_LISTENING)
-        while not self._stop.is_set():
-            try:
-                conn, addr = self._server.accept()
-            except socket.timeout:
-                self._poll_position()  # keep the readout live with no client
-                continue
-            except OSError:
-                break
-            self._emit("log", f"gpredict connected from {addr[0]}")
-            self._emit("status", STATUS_CONNECTED)
-            self._serve_client(conn)
-            if not self._stop.is_set():
-                self._emit("status", STATUS_LISTENING)
+        try:
+            while not self._stop.is_set():
+                try:
+                    conn, addr = self._server.accept()
+                except socket.timeout:
+                    self._poll_position()  # keep the readout live with no client
+                    continue
+                except OSError:
+                    if self._stop.is_set():
+                        break
+                    raise
+                self._emit("log", f"gpredict connected from {addr[0]}")
+                self._emit("status", STATUS_CONNECTED)
+                self._serve_client(conn)
+                if not self._stop.is_set():
+                    self._emit("status", STATUS_LISTENING)
+        except Exception as exc:
+            self._emit("log", f"Bridge stopped unexpectedly: {exc}")
+            self._emit("error", str(exc))
+            self._emit("status", STATUS_STOPPED)
 
     def _serve_client(self, conn):
         self._client = conn
         conn.settimeout(self.IDLE_POLL_SECONDS)
+        buffer = b""
         try:
             while not self._stop.is_set():
                 try:
@@ -187,9 +196,11 @@ class RotorBridge:
                     break
                 if not data:
                     break
+                buffer += data
                 keep_going = True
-                for line in data.decode("ascii", "replace").splitlines():
-                    line = line.strip()
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    line = line.decode("ascii", "replace").strip()
                     if line and not self._handle_command(line, conn):
                         keep_going = False
                         break

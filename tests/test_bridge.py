@@ -110,3 +110,31 @@ def test_idle_poll_emits_position_without_a_client():
         wait_for(lambda: ("position", (142.3, 37.0)) in h.events, message="idle position")
     finally:
         h.bridge.stop()
+
+
+def test_command_split_across_recv_calls_is_still_framed_correctly(harness):
+    client = harness.connect()
+    client.sendall(b"p")
+    time.sleep(0.05)
+    client.sendall(b"\n")
+    assert client.recv(1024) == b"142.3\n37.0\n"
+    client.close()
+
+
+def test_run_surfaces_unexpected_exception_and_stop_stays_safe():
+    h = Harness()
+    h.bridge.IDLE_POLL_SECONDS = 0.1
+
+    def boom():
+        raise RuntimeError("boom")
+
+    h.bridge._poll_position = boom
+    h.bridge.start()
+    try:
+        wait_for(lambda: any(kind == "error" for kind, _ in h.events), message="error event")
+        wait_for(lambda: not h.bridge.running, message="thread exit")
+        assert h.statuses()[-1] == m2rotor.STATUS_STOPPED
+        assert ("error", "boom") in h.events
+    finally:
+        h.bridge.stop()  # must not raise even though the thread already died
+    assert h.az.is_open is False and h.el.is_open is False
